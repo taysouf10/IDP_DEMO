@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import date
 from typing import Iterable
 
 from fastapi import (
@@ -15,6 +14,7 @@ from fastapi import (
     status,
 )
 
+from .ocr import OCRProcessingError, extract_id_fields
 from .schemas import ExtractionRequest, ExtractionResponse, IDCardFields
 
 app = FastAPI(
@@ -45,32 +45,19 @@ def _build_request(
     return ExtractionRequest(include_address=include_address)
 
 
-async def _simulate_extraction(
+async def _run_extraction(
     upload: UploadFile,
     request_data: ExtractionRequest,
 ) -> IDCardFields:
-    """Simulate the extraction routine and return structured fields.
-
-    In a production system this function would call into an OCR/NER pipeline.
-    For now it simply validates that the uploaded file contains bytes and
-    returns placeholder data in the expected format.
-    """
+    """Execute the OCR pipeline and normalise the output based on user options."""
 
     contents = await upload.read()
-    if not contents:
-        raise ValueError("The uploaded file appears to be empty.")
+    fields = extract_id_fields(contents, include_address=request_data.include_address)
 
-    extracted = IDCardFields(
-        cin="AA123456",
-        full_name="Example Citizen",
-        date_of_birth=date(1990, 1, 1),
-        address="123 Rue de l'Example, Casablanca",
-    )
+    if not request_data.include_address and fields.address is not None:
+        fields = fields.copy(update={"address": None})
 
-    if not request_data.include_address:
-        extracted = extracted.copy(update={"address": None})
-
-    return extracted
+    return fields
 
 
 @app.post("/extract", response_model=ExtractionResponse, status_code=status.HTTP_200_OK)
@@ -87,11 +74,16 @@ async def extract_id_card(
         )
 
     try:
-        fields = await _simulate_extraction(image, request_data)
-    except ValueError as exc:  # pragma: no cover - placeholder error path
+        fields = await _run_extraction(image, request_data)
+    except OCRProcessingError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=str(exc),
+        ) from exc
+    except ValueError as exc:  # pragma: no cover - unexpected parsing error
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Failed to parse the uploaded ID card image.",
         ) from exc
     finally:
         await image.close()
