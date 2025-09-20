@@ -23,7 +23,31 @@ tested end-to-end before the OCR pipeline is integrated.
 
 ## Getting started
 
-1. Create a virtual environment and install the runtime dependencies:
+1. Install the system dependencies for Tesseract OCR so that `pytesseract` can invoke
+   the binary:
+
+   **Debian/Ubuntu**
+
+   ```bash
+   sudo apt update
+   sudo apt install -y tesseract-ocr libtesseract-dev libleptonica-dev
+   tesseract --version
+   ```
+
+   **macOS (Homebrew)**
+
+   ```bash
+   brew update
+   brew install tesseract icu4c
+   tesseract --version
+   ```
+
+   The default Homebrew installation includes the `eng` and `fra` language data used by
+   `extract_id_fields`. Ensure the Homebrew binary directory (typically
+   `/usr/local/bin` on Intel Macs or `/opt/homebrew/bin` on Apple Silicon) is on your
+   `PATH` before proceeding to the Python virtual environment steps.
+
+2. Create a virtual environment and install the runtime dependencies:
 
    ```bash
    python -m venv .venv
@@ -31,7 +55,7 @@ tested end-to-end before the OCR pipeline is integrated.
    pip install fastapi uvicorn
    ```
 
-2. Start the development server with auto-reload enabled:
+3. Start the development server with auto-reload enabled:
 
    ```bash
    uvicorn src.api.main:app --reload
