@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import date
 from typing import Iterable
 
 from fastapi import (
@@ -15,7 +14,8 @@ from fastapi import (
     status,
 )
 
-from .schemas import ExtractionRequest, ExtractionResponse, IDCardFields
+from .ocr import OCRExtractionError, extract_id_card_fields
+from .schemas import ExtractionRequest, ExtractionResponse
 
 app = FastAPI(
     title="Moroccan ID Extraction API",
@@ -45,34 +45,6 @@ def _build_request(
     return ExtractionRequest(include_address=include_address)
 
 
-async def _simulate_extraction(
-    upload: UploadFile,
-    request_data: ExtractionRequest,
-) -> IDCardFields:
-    """Simulate the extraction routine and return structured fields.
-
-    In a production system this function would call into an OCR/NER pipeline.
-    For now it simply validates that the uploaded file contains bytes and
-    returns placeholder data in the expected format.
-    """
-
-    contents = await upload.read()
-    if not contents:
-        raise ValueError("The uploaded file appears to be empty.")
-
-    extracted = IDCardFields(
-        cin="AA123456",
-        full_name="Example Citizen",
-        date_of_birth=date(1990, 1, 1),
-        address="123 Rue de l'Example, Casablanca",
-    )
-
-    if not request_data.include_address:
-        extracted = extracted.copy(update={"address": None})
-
-    return extracted
-
-
 @app.post("/extract", response_model=ExtractionResponse, status_code=status.HTTP_200_OK)
 async def extract_id_card(
     image: UploadFile = File(..., description="Image of the Moroccan ID card to parse."),
@@ -86,9 +58,14 @@ async def extract_id_card(
             detail="Unsupported file type. Upload a JPEG, PNG or WEBP image.",
         )
 
+    contents = await image.read()
+
     try:
-        fields = await _simulate_extraction(image, request_data)
-    except ValueError as exc:  # pragma: no cover - placeholder error path
+        fields = extract_id_card_fields(
+            contents,
+            include_address=request_data.include_address,
+        )
+    except OCRExtractionError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=str(exc),
